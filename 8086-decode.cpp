@@ -14,6 +14,8 @@ static const char *reg16[8] = {"ax", "cx", "dx", "bx", "sp", "bp", "si", "di"};
 static const char *reg8[8] = {"al", "cl", "dl", "bl", "ah", "ch", "dh", "bh"};
 static const char *eaBase[8] = {"bx + si", "bx + di", "bp + si", "bp + di",
                                 "si",      "di",      "bp",      "bx"};
+static const char *arithCode[8] = {"add", "or",  "adc", "sbb",
+                                   "and", "sub", "xor", "cmp"};
 
 static int read16(const std::vector<uint8_t> &code, size_t &i) {
     int v = code[i] | (code[i + 1] << 8);
@@ -42,9 +44,9 @@ static void decodeRegImm(const char *m, uint8_t op,
     std::println(out, "{} {}, {}", m, regName(reg, w), imm);
 }
 
-static void decodeModeRM(const char *m, uint8_t op,
-                         const std::vector<uint8_t> &code, size_t &i,
-                         std::ofstream &out) {
+static void decodeModRM(const char *m, uint8_t op,
+                        const std::vector<uint8_t> &code, size_t &i,
+                        std::ofstream &out) {
     bool w = op & 1;
     bool d = (op >> 1) & 1;
     uint8_t modrm = code[i++];
@@ -113,13 +115,55 @@ static void decodeRmImm(const char *m, uint8_t op,
     println(out, "{} {}, {}", m, rmStr, imm);
 }
 
+static void decodeArithRmImm(const char *m, uint8_t op,
+                             const std::vector<uint8_t> &code, size_t &i,
+                             std::ofstream &out) {
+    bool w = op & 1;
+    bool s = op & 2;
+    uint8_t modrm = code[i++];
+    int mod = modrm >> 6;
+    int rm = modrm & 7;
+    int reg = (modrm >> 3) & 7;
+
+    const char *mnemonic = arithCode[reg];
+
+    std::string rmStr;
+    if (mod == 3) {
+        rmStr = regName(rm, w);
+    } else if (mod == 0 && rm == 6) {
+        // direct address mode
+        rmStr = "[" + std::to_string(read16(code, i)) + "]";
+    } else {
+        int disp = 0;
+        if (mod == 1)
+            disp = (int8_t)read16(code, i);
+        if (mod == 2)
+            disp = (int16_t)read16(code, i);
+        rmStr = std::string("[") + eaBase[rm];
+        if (disp > 0)
+            rmStr += " + " + std::to_string(disp);
+        if (disp < 0)
+            rmStr += " - " + std::to_string(-disp);
+        rmStr += "]";
+    }
+    std::string imm;
+    if (w && s) {
+        imm = "word " + std::to_string((int16_t)code[i++]);
+    } else if (w) {
+        imm = "word " + std::to_string((int16_t)read16(code, i));
+    } else {
+        imm = "byte " + std::to_string((int8_t)code[i++]);
+    }
+    println(out, "{} {}, {}", mnemonic, rmStr, imm);
+}
+
 static void decodeMemAcc(const char *m, uint8_t op,
                          const std::vector<uint8_t> &code, size_t &i,
                          std::ofstream &out) {
     bool w = op & 1;
     uint16_t addr = read16(code, i);
     std::string addrStr = "[" + std::to_string(addr) + "]";
-    std::string regStr = w ? reg16[0] : reg8[0];
+    const char *regStr = w ? reg16[0] : reg8[0];
 
     println(out, "{} {}, {}", m, regStr, addrStr);
 }
@@ -130,9 +174,22 @@ static void decodeAccMem(const char *m, uint8_t op,
     bool w = op & 1;
     uint16_t addr = read16(code, i);
     std::string addrStr = "[" + std::to_string(addr) + "]";
-    std::string regStr = w ? reg16[0] : reg8[0];
+    const char *regStr = w ? reg16[0] : reg8[0];
 
     println(out, "{} {}, {}", m, addrStr, regStr);
+}
+
+static void decodeArithImmAcc(const char *m, uint8_t op,
+                              const std::vector<uint8_t> &code, size_t &i,
+                              std::ofstream &out) {
+    bool w = op & 1;
+    int arith = (op >> 2) & 7;
+    const char *mnemonic = arithCode[arith];
+
+    int imm = w ? (int16_t)read16(code, i) : (int8_t)code[i++];
+    const char *regStr = w ? reg16[0] : reg8[0];
+
+    println(out, "{} {}, {}", mnemonic, regStr, imm);
 }
 
 struct Pattern {
@@ -140,11 +197,14 @@ struct Pattern {
     OpInfo info;
 };
 
-static const Pattern patterns[] = {{0xFC, 0x88, {"mov", decodeModeRM}},
+static const Pattern patterns[] = {{0xFC, 0x88, {"mov", decodeModRM}},
                                    {0xFE, 0xC6, {"mov", decodeRmImm}},
                                    {0xF0, 0xB0, {"mov", decodeRegImm}},
                                    {0xFE, 0xA0, {"mov", decodeMemAcc}},
-                                   {0xFE, 0xA2, {"mov", decodeAccMem}}};
+                                   {0xFE, 0xA2, {"mov", decodeAccMem}},
+                                   {0xFC, 0x00, {"add", decodeModRM}},
+                                   {0xFE, 0x80, {"xxx", decodeArithRmImm}},
+                                   {0xFE, 0x04, {"xxx", decodeArithImmAcc}}};
 
 static OpInfo table[256];
 
