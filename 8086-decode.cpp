@@ -129,17 +129,18 @@ static void decodeArithRmImm(const char *m, uint8_t op,
 
     std::string rmStr;
     if (mod == 3) {
-        rmStr = regName(rm, w);
+        rmStr += regName(rm, w);
     } else if (mod == 0 && rm == 6) {
         // direct address mode
-        rmStr = "[" + std::to_string(read16(code, i)) + "]";
+        rmStr += "[" + std::to_string(read16(code, i)) + "]";
     } else {
+        rmStr += w ? "word " : "byte ";
         int disp = 0;
         if (mod == 1)
             disp = (int8_t)read16(code, i);
         if (mod == 2)
             disp = (int16_t)read16(code, i);
-        rmStr = std::string("[") + eaBase[rm];
+        rmStr += std::string("[") + eaBase[rm];
         if (disp > 0)
             rmStr += " + " + std::to_string(disp);
         if (disp < 0)
@@ -148,12 +149,13 @@ static void decodeArithRmImm(const char *m, uint8_t op,
     }
     std::string imm;
     if (w && s) {
-        imm = "word " + std::to_string((int16_t)code[i++]);
+        imm = std::to_string((int16_t)code[i++]);
     } else if (w) {
-        imm = "word " + std::to_string((int16_t)read16(code, i));
+        imm = std::to_string((int16_t)read16(code, i));
     } else {
-        imm = "byte " + std::to_string((int8_t)code[i++]);
+        imm = std::to_string((int8_t)code[i++]);
     }
+
     println(out, "{} {}, {}", mnemonic, rmStr, imm);
 }
 
@@ -183,7 +185,7 @@ static void decodeArithImmAcc(const char *m, uint8_t op,
                               const std::vector<uint8_t> &code, size_t &i,
                               std::ofstream &out) {
     bool w = op & 1;
-    int arith = (op >> 2) & 7;
+    int arith = (op >> 3) & 7;
     const char *mnemonic = arithCode[arith];
 
     int imm = w ? (int16_t)read16(code, i) : (int8_t)code[i++];
@@ -203,9 +205,15 @@ static const Pattern patterns[] = {{0xFC, 0x88, {"mov", decodeModRM}},
                                    {0xFE, 0xA0, {"mov", decodeMemAcc}},
                                    {0xFE, 0xA2, {"mov", decodeAccMem}},
                                    {0xFC, 0x00, {"add", decodeModRM}},
-                                   {0xFE, 0x80, {"xxx", decodeArithRmImm}},
-                                   {0xFE, 0x04, {"xxx", decodeArithImmAcc}}};
-
+                                   {0xFC, 0x08, {"or", decodeModRM}},
+                                   {0xFC, 0x10, {"adc", decodeModRM}},
+                                   {0xFC, 0x18, {"sbb", decodeModRM}},
+                                   {0xFC, 0x20, {"and", decodeModRM}},
+                                   {0xFC, 0x28, {"sub", decodeModRM}},
+                                   {0xFC, 0x30, {"xor", decodeModRM}},
+                                   {0xFC, 0x38, {"cmp", decodeModRM}},
+                                   {0xFC, 0x80, {"xxx", decodeArithRmImm}},
+                                   {0xC6, 0x04, {"xxx", decodeArithImmAcc}}};
 static OpInfo table[256];
 
 static void buildTable() {
