@@ -16,6 +16,10 @@ static const char *eaBase[8] = {"bx + si", "bx + di", "bp + si", "bp + di",
                                 "si",      "di",      "bp",      "bx"};
 static const char *arithCode[8] = {"add", "or",  "adc", "sbb",
                                    "and", "sub", "xor", "cmp"};
+static const char *jumpCode[16] = {"jo",  "jno",  "jb",  "jnb", "je", "jne",
+                                   "jbe", "jnbe", "js",  "jns", "jp", "jnp",
+                                   "jl",  "jnl",  "jle", "jnle"};
+static const char *loopCode[4] = {"loop", "loopz", "loopnz", "jcxz"};
 
 static int read16(const std::vector<uint8_t> &code, size_t &i) {
     int v = code[i] | (code[i + 1] << 8);
@@ -194,6 +198,23 @@ static void decodeArithImmAcc(const char *m, uint8_t op,
     println(out, "{} {}, {}", mnemonic, regStr, imm);
 }
 
+static void decodeCondJump(const char *m, uint8_t op,
+                           const std::vector<uint8_t> &code, size_t &i,
+                           std::ofstream &out) {
+    int reg = op & 15;
+    const char *mnemonic = jumpCode[reg];
+    int off = (int8_t)code[i++];
+    println(out, "{} {}", mnemonic, off);
+}
+static void decodeLoop(const char *m, uint8_t op,
+                       const std::vector<uint8_t> &code, size_t &i,
+                       std::ofstream &out) {
+    int reg = op & 3;
+    const char *mnemonic = loopCode[reg];
+    int off = (int8_t)code[i++];
+    println(out, "{} {}", mnemonic, off);
+}
+
 struct Pattern {
     uint8_t mask, value;
     OpInfo info;
@@ -213,7 +234,9 @@ static const Pattern patterns[] = {{0xFC, 0x88, {"mov", decodeModRM}},
                                    {0xFC, 0x30, {"xor", decodeModRM}},
                                    {0xFC, 0x38, {"cmp", decodeModRM}},
                                    {0xFC, 0x80, {"xxx", decodeArithRmImm}},
-                                   {0xC6, 0x04, {"xxx", decodeArithImmAcc}}};
+                                   {0xC6, 0x04, {"xxx", decodeArithImmAcc}},
+                                   {0xF0, 0x70, {"xxx", decodeCondJump}},
+                                   {0xFC, 0xE0, {"xxx", decodeLoop}}};
 static OpInfo table[256];
 
 static void buildTable() {
@@ -260,7 +283,7 @@ int main(int argc, char **argv) {
         uint8_t op = code[i++];
         const OpInfo &info = table[op];
         if (!info.decode) {
-            std::print(stderr, "db 0x%02X ; unkown\n", op);
+            std::print(stderr, "[8086-decode] uknown op");
             continue;
         }
         info.decode(info.mnemonic, op, code, i, out);
