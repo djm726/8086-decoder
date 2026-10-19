@@ -4,11 +4,14 @@
 
 #include "8086-sim.h"
 #include "8086-decode.h"
+#include <bit>
 #include <cstdio>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <print>
 #include <string>
+#include <utility>
 #include <vector>
 
 static const char* reg16_names[8] = {"ax", "cx", "dx", "bx",
@@ -49,6 +52,40 @@ static bool write_operand(Registers& regs, const Operand& o, u16 val)
     }
 }
 
+// add/sub dst and src at the operand width, setting the arithmetic flags
+static u16 arith(Registers& regs, OpType op, u16 dst, u16 src, bool w)
+{
+    u32 mask = w ? 0xFFFF : 0xFF;
+    u16 sign = w ? 0x8000 : 0x80;
+    dst &= mask;
+    src &= mask;
+
+    bool add = op == OP_ADD;
+    u32 full = add ? (u32)dst + src : (u32)dst - src;
+    u16 res = full & mask;
+
+    u16 f = 0;
+    if (full & (mask + 1))
+        f |= FLAG_C;
+    if (std::popcount((u8)res) % 2 == 0)
+        f |= FLAG_P;
+    if ((dst ^ src ^ res) & 0x10)
+        f |= FLAG_A;
+    if (res == 0)
+        f |= FLAG_Z;
+    if (res & sign)
+        f |= FLAG_S;
+    // add: operands share a sign the result lacks
+    // sub: operands differ in sign and the result's sign differs from dst
+    u16 ovf = add ? ~(dst ^ src) & (dst ^ res) : (dst ^ src) & (dst ^ res);
+    if (ovf & sign)
+        f |= FLAG_O;
+
+    const u16 arith_flags = FLAG_C | FLAG_P | FLAG_A | FLAG_Z | FLAG_S | FLAG_O;
+    regs.flags = (regs.flags & ~arith_flags) | f;
+    return res;
+}
+
 bool execute(Registers& regs, const Instruction& inst)
 {
     const Operand& dst = inst.operands[0];
@@ -58,6 +95,16 @@ bool execute(Registers& regs, const Instruction& inst)
     case OP_MOV: {
         u16 val;
         return read_operand(regs, src, val) && write_operand(regs, dst, val);
+    }
+    case OP_ADD:
+    case OP_SUB:
+    case OP_CMP: {
+        u16 a, b;
+        if (!read_operand(regs, dst, a) || !read_operand(regs, src, b))
+            return false;
+        u16 res = arith(regs, inst.op == OP_ADD ? OP_ADD : OP_SUB, a, b,
+                        dst.wide);
+        return inst.op == OP_CMP || write_operand(regs, dst, res);
     }
     default:
         return false;
@@ -82,11 +129,28 @@ static u16* dest_register(Registers& regs, const Operand& o, const char*& name)
     }
 }
 
+// set flags as letters, in reference output order
+static std::string flags_str(u16 flags)
+{
+    static const std::pair<Flag, char> names[] = {
+        {FLAG_C, 'C'}, {FLAG_P, 'P'}, {FLAG_A, 'A'},
+        {FLAG_Z, 'Z'}, {FLAG_S, 'S'}, {FLAG_O, 'O'}};
+    std::string s;
+    for (auto [flag, c] : names)
+        if (flags & flag)
+            s += c;
+    return s;
+}
+
 bool verify(Registers& regs, const Instruction& inst, const std::string& text)
 {
     const char* name = nullptr;
-    u16* dst = dest_register(regs, inst.operands[0], name);
+    // cmp only sets flags, so don't report its destination register
+    u16* dst = inst.op == OP_CMP
+                   ? nullptr
+                   : dest_register(regs, inst.operands[0], name);
     u16 before = dst ? *dst : 0;
+    u16 flags_before = regs.flags;
 
     if (!execute(regs, inst))
     {
@@ -94,10 +158,16 @@ bool verify(Registers& regs, const Instruction& inst, const std::string& text)
         return false;
     }
 
+    std::string trace;
     if (dst)
-        std::println("{} ; {}:{:#x}->{:#x}", text, name, before, *dst);
-    else
+        trace += std::format(" {}:{:#x}->{:#x}", name, before, *dst);
+    if (regs.flags != flags_before)
+        trace += std::format(" flags:{}->{}", flags_str(flags_before),
+                             flags_str(regs.flags));
+    if (trace.empty())
         std::println("{}", text);
+    else
+        std::println("{} ;{}", text, trace);
     return true;
 }
 
@@ -118,6 +188,8 @@ static void print_registers(const Registers& regs)
         if (regs.sr[i])
             std::println("      {}: {:#06x} ({})", sreg_names[i], regs.sr[i],
                          regs.sr[i]);
+    if (regs.flags)
+        std::println("   flags: {}", flags_str(regs.flags));
 }
 
 int main(int argc, char** argv)

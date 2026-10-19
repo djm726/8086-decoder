@@ -49,7 +49,7 @@ enum FieldType : u8 {
 struct BitField {
     FieldType type;
     u8 bit_cnt;
-    u8 value;
+    u8 value = 0;
 };
 
 struct Encoding {

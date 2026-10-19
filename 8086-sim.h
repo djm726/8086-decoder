@@ -3,12 +3,23 @@
 #include "8086-op.h"
 #include <string>
 
+// flags register bits, at their 8086 positions
+enum Flag : u16 {
+    FLAG_C = 1 << 0,  // carry
+    FLAG_P = 1 << 2,  // parity
+    FLAG_A = 1 << 4,  // auxiliary carry
+    FLAG_Z = 1 << 6,  // zero
+    FLAG_S = 1 << 7,  // sign
+    FLAG_O = 1 << 11, // overflow
+};
+
 // General purpose registers, indexed by the 8086 reg encoding (see reg16).
 // 8 bit registers alias the low/high bytes of ax-dx: reg & 3 picks the
 // parent register and reg & 4 selects the high byte (see reg8).
 struct Registers {
     u16 r[8];
     u16 sr[4]; // segment registers: es, cs, ss, ds
+    u16 flags;
 
     u16 read(u8 reg, bool w) const
     {
