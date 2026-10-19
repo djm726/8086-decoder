@@ -3,6 +3,7 @@
 #include <fstream>
 #include <iostream>
 #include <print>
+#include <string>
 #include <vector>
 
 #include "8086-op.h"
@@ -683,3 +684,10 @@ static const Encoding table[] = {
     {OP_LOCK, {{F_LITERAL, 8, 0b11110000}}},
     {OP_SEGMENT, {{F_LITERAL, 3, 0b001}, {F_SR, 2}, {F_LITERAL, 3, 0b110}}},
 };
+
+// decode the instruction at code[i] into curr and advance i past it
+bool decode(const std::vector<u8>& code, size_t& i, Encoding& curr);
+Instruction to_instruction(const Encoding& enc);
+// asm text for inst; size is its length in bytes (for relative jumps)
+std::string instruction_str(const Instruction& inst, size_t size,
+                            const std::string& lock, const std::string& seg);

@@ -3,7 +3,6 @@
  */
 
 #include "8086-decode.h"
-#include <cstdint>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -102,11 +101,20 @@ bool decode(const std::vector<u8>& code, size_t& i, Encoding& curr)
 
         switch (field.type)
         {
-        case F_MOD: mod = value; break;
-        case F_RM:  rm = value; break;
-        case F_W:   w = value; break;
-        case F_S:   s = value; break;
-        default: break;
+        case F_MOD:
+            mod = value;
+            break;
+        case F_RM:
+            rm = value;
+            break;
+        case F_W:
+            w = value;
+            break;
+        case F_S:
+            s = value;
+            break;
+        default:
+            break;
         }
     }
     // step past the last byte consumed
@@ -160,44 +168,116 @@ Instruction to_instruction(const Encoding& enc)
         u8 value = field.value;
         switch (field.type)
         {
-        case F_D:   d = value; break;
-        case F_W:   w = value; if (w) inst.flags |= INST_WIDE; break;
-        case F_S:   s = value; break;
-        case F_V:   v = value; has_v = true; break;
-        case F_Z:   if (value) inst.flags |= INST_Z; break;
-        case F_MOD: mod = value; break;
-        case F_REG: reg = value; has_reg = true; break;
-        case F_RM:  rm = value; has_rm = true; break;
-        case F_SR:  sr = value; has_sr = true; break;
-        case F_DISP_LO: disp |= value; disp_bytes = 1; break;
-        case F_DISP_HI: disp |= value << 8; disp_bytes = 2; break;
+        case F_D:
+            d = value;
+            break;
+        case F_W:
+            w = value;
+            if (w)
+                inst.flags |= INST_WIDE;
+            break;
+        case F_S:
+            s = value;
+            break;
+        case F_V:
+            v = value;
+            has_v = true;
+            break;
+        case F_Z:
+            if (value)
+                inst.flags |= INST_Z;
+            break;
+        case F_MOD:
+            mod = value;
+            break;
+        case F_REG:
+            reg = value;
+            has_reg = true;
+            break;
+        case F_RM:
+            rm = value;
+            has_rm = true;
+            break;
+        case F_SR:
+            sr = value;
+            has_sr = true;
+            break;
+        case F_DISP_LO:
+            disp |= value;
+            disp_bytes = 1;
+            break;
+        case F_DISP_HI:
+            disp |= value << 8;
+            disp_bytes = 2;
+            break;
         case F_DATA:
-        case F_DATA_LO: data |= value; data_bytes = 1; break;
+        case F_DATA_LO:
+            data |= value;
+            data_bytes = 1;
+            break;
         case F_DATA_IF_W:
         case F_DATA_IF_SW:
-        case F_DATA_HI: data |= value << 8; data_bytes = 2; break;
-        case F_ADDR_LO: addr |= value; has_addr = true; break;
-        case F_ADDR_HI: addr |= value << 8; break;
-        case F_IP_INC8: rel = (i8)value; has_rel = true; break;
-        case F_IP_INC_LO: rel |= value; has_rel = true; break;
-        case F_IP_INC_HI: rel |= value << 8; break;
-        case F_IP_LO: ip |= value; has_far_addr = true; break;
-        case F_IP_HI: ip |= value << 8; break;
-        case F_CS_LO: cs |= value; break;
-        case F_CS_HI: cs |= value << 8; break;
-        case F_XXX: xxx = value; has_esc = true; break;
-        case F_YYY: yyy = value; break;
-        case F_DX:  has_dx = true; break;
-        case F_FAR: if (value) inst.flags |= INST_FAR; break;
-        default: break;
+        case F_DATA_HI:
+            data |= value << 8;
+            data_bytes = 2;
+            break;
+        case F_ADDR_LO:
+            addr |= value;
+            has_addr = true;
+            break;
+        case F_ADDR_HI:
+            addr |= value << 8;
+            break;
+        case F_IP_INC8:
+            rel = (i8)value;
+            has_rel = true;
+            break;
+        case F_IP_INC_LO:
+            rel |= value;
+            has_rel = true;
+            break;
+        case F_IP_INC_HI:
+            rel |= value << 8;
+            break;
+        case F_IP_LO:
+            ip |= value;
+            has_far_addr = true;
+            break;
+        case F_IP_HI:
+            ip |= value << 8;
+            break;
+        case F_CS_LO:
+            cs |= value;
+            break;
+        case F_CS_HI:
+            cs |= value << 8;
+            break;
+        case F_XXX:
+            xxx = value;
+            has_esc = true;
+            break;
+        case F_YYY:
+            yyy = value;
+            break;
+        case F_DX:
+            has_dx = true;
+            break;
+        case F_FAR:
+            if (value)
+                inst.flags |= INST_FAR;
+            break;
+        default:
+            break;
         }
     }
 
     // 8 bit displacement is sign extended
     i16 disp16 = disp_bytes == 1 ? (i8)disp : (i16)disp;
     // 8 bit data is sign extended to a word only when s = 1, w = 1
-    i16 data16 = (data_bytes == 1 && s && w) ? (i8)data : (i16)data;
+    bool sign_ext = data_bytes == 1 && s && w;
+    i16 data16 = sign_ext ? (i8)data : (i16)data;
     Operand imm = make_imm(data16, w || data_bytes == 2);
+    imm.sign_ext = sign_ext;
     bool data_used = data_bytes == 0;
 
     // reg side: REG or SR field
@@ -225,28 +305,24 @@ Instruction to_instruction(const Encoding& enc)
             other.direct = (mod == 0b00 && rm == 0b110);
             other.disp = disp16;
         }
-    }
-    else if (has_addr)
+    } else if (has_addr)
     {
         other.type = OPND_MEM;
         other.wide = w;
         other.direct = true;
         other.disp = (i16)addr;
-    }
-    else if (has_dx)
+    } else if (has_dx)
         other = make_reg((u8)reg16::dx, true);
     else if (has_rel)
     {
         other.type = OPND_REL;
         other.imm = rel;
-    }
-    else if (has_far_addr)
+    } else if (has_far_addr)
     {
         other.type = OPND_FAR_ADDR;
         other.imm = (i16)ip;
         other.cs = cs;
-    }
-    else if (!data_used)
+    } else if (!data_used)
     {
         other = imm;
         data_used = true;
@@ -296,8 +372,7 @@ static std::string operand_str(const Operand& o, const char* prefix,
         return o.wide ? reg16_names[o.reg] : reg8_names[o.reg];
     case OPND_SEGREG:
         return sreg_names[o.reg & 3];
-    case OPND_MEM:
-    {
+    case OPND_MEM: {
         std::string s = prefix + seg;
         if (o.direct)
             return s + "[" + std::to_string((u16)o.disp) + "]";
@@ -309,7 +384,8 @@ static std::string operand_str(const Operand& o, const char* prefix,
         return s + "]";
     }
     case OPND_IMM:
-        return std::to_string(o.imm);
+        // only sign extended bytes are signed, full words print unsigned
+        return o.sign_ext ? std::to_string(o.imm) : std::to_string((u16)o.imm);
     case OPND_REL:
         // offset is from the end of the instruction, $ is its start
         return std::format("${:+}", (int)size + o.imm);
@@ -322,9 +398,8 @@ static std::string operand_str(const Operand& o, const char* prefix,
 
 // lock: "lock " to put in front of the line (or empty)
 // seg: segment override like "cs:" to put in front of the memory operand
-static void print_instruction(std::ofstream& out, const Instruction& inst,
-                              size_t size, const std::string& lock,
-                              const std::string& seg)
+std::string instruction_str(const Instruction& inst, size_t size,
+                            const std::string& lock, const std::string& seg)
 {
     std::string line = lock + ops[inst.op];
     switch (inst.op)
@@ -348,7 +423,8 @@ static void print_instruction(std::ofstream& out, const Instruction& inst,
         if (inst.operands[0].type == OPND_NONE)
             line = lock + "int3";
         break;
-    default: break;
+    default:
+        break;
     }
 
     const Operand& a = inst.operands[0];
@@ -366,14 +442,23 @@ static void print_instruction(std::ofstream& out, const Instruction& inst,
         bool is_shift = inst.op >= OP_SHL && inst.op <= OP_RCR;
         if (inst.flags & INST_FAR)
             prefix = "far ";
-        else if (is_shift || (other.type != OPND_REG &&
-                              other.type != OPND_SEGREG))
+        else if (is_shift ||
+                 (other.type != OPND_REG && other.type != OPND_SEGREG))
             prefix = o.wide ? "word " : "byte ";
 
         line += n ? ", " : " ";
         line += operand_str(o, prefix, seg, size);
     }
-    std::println(out, "{}", line);
+    return line;
+}
+
+// the simulator links this file in and supplies its own main
+#ifndef SIM
+static void print_instruction(std::ofstream& out, const Instruction& inst,
+                              size_t size, const std::string& lock,
+                              const std::string& seg)
+{
+    std::println(out, "{}", instruction_str(inst, size, lock, seg));
 }
 
 static std::ifstream open_input(const std::string& filename)
@@ -447,3 +532,4 @@ int main(int argc, char** argv)
 
     return 0;
 }
+#endif

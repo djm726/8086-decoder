@@ -154,6 +154,7 @@ struct Operand {
     bool direct = false; // OPND_MEM: disp is a direct address, rm unused
     i16 disp = 0;      // OPND_MEM displacement / direct address
     i16 imm = 0;       // OPND_IMM value, OPND_REL offset, OPND_FAR_ADDR ip
+    bool sign_ext = false; // OPND_IMM: byte sign extended to a word (s = 1)
     u16 cs = 0;        // OPND_FAR_ADDR segment
 };
 
